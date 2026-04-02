@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ケア記録 AI分析アプリ</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="layout">
+
+  <!-- サイドバー -->
+  <aside class="sidebar">
+    <div class="logo">
+      <span class="logo-icon">🏥</span>
+      <div>
+        <div class="logo-title">ケア記録 AI分析</div>
+        <div class="logo-sub">シンプルケース × Claude AI</div>
+      </div>
+    </div>
+
+    <section class="panel">
+      <div class="panel-title">APIキー</div>
+      <input id="apiKey" type="password" placeholder="sk-ant-... または ghp_..." class="input-text">
+      <div class="hint">
+        <strong>Anthropic:</strong> console.anthropic.com でAPIキー取得（sk-ant-...）<br>
+        <strong>GitHub:</strong> Settings → Developer settings → Personal access tokens（ghp_...）
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-title">シンプルケース データ</div>
+      <label class="upload-btn" id="uploadLabel">
+        <input type="file" id="fileInput" accept=".csv,.xlsx,.xls" hidden>
+        <span id="uploadText">CSV / Excel をアップロード</span>
+      </label>
+      <div id="fileStatus" class="file-status"></div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-title">Talknote データ</div>
+      <textarea id="talknotePasteArea" class="paste-area" placeholder="Talknoteの投稿内容をここに貼り付け..."></textarea>
+      <button id="talknoteLoadBtn" class="upload-btn" style="margin-top:6px;">読み込む</button>
+      <div id="talknoteFileStatus" class="file-status"></div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-title">まもるーの 睡眠データ</div>
+      <label class="upload-btn" id="mamorunoUploadLabel">
+        <input type="file" id="mamorunoFileInput" accept=".csv" hidden>
+        <span id="mamorunoUploadText">CSV をアップロード</span>
+      </label>
+      <div id="mamorunoFileStatus" class="file-status"></div>
+    </section>
+
+    <div class="sidebar-footer">ver 1.1.0</div>
+  </aside>
+
+  <!-- メインコンテンツ -->
+  <main class="main">
+
+    <!-- 初期画面 -->
+    <div id="welcomeScreen" class="welcome">
+      <div class="welcome-icon">📊</div>
+      <h1>ケア記録 AI分析アプリ</h1>
+      <p>左のサイドバーから操作してください</p>
+      <button id="loadSampleBtn" class="btn-sample">サンプルデータで試す</button>
+
+      <div class="steps">
+        <div class="step"><span class="step-num">1</span>APIキーを入力</div>
+        <div class="step-arrow">→</div>
+        <div class="step"><span class="step-num">2</span>CSVをアップロード</div>
+        <div class="step-arrow">→</div>
+        <div class="step"><span class="step-num">3</span>AI分析を実行</div>
+      </div>
+      <div class="features">
+        <div class="feature">
+          <div class="feature-icon">📈</div>
+          <div>記録の傾向を<br>グラフで可視化</div>
+        </div>
+        <div class="feature">
+          <div class="feature-icon">🤖</div>
+          <div>5種類のAI分析で<br>ケアに活かす</div>
+        </div>
+        <div class="feature">
+          <div class="feature-icon">💤</div>
+          <div>まもるーの連携<br>（準備中）</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- データ画面 -->
+    <div id="dataScreen" class="data-screen" hidden>
+
+      <!-- タブ -->
+      <div class="tabs">
+        <button class="tab active" data-tab="overview">データ概要</button>
+        <button class="tab" data-tab="charts">グラフ</button>
+        <button class="tab" data-tab="talknote">Talknote</button>
+        <button class="tab" data-tab="analysis">AI分析</button>
+        <button class="tab" data-tab="mamoruno">まもるーの連携</button>
+        <button class="tab" data-tab="integrated">統合分析</button>
+      </div>
+
+      <!-- 概要タブ -->
+      <div id="tab-overview" class="tab-content active">
+        <div class="metrics" id="metricsRow"></div>
+        <div class="section-title">データプレビュー（先頭10件）</div>
+        <div class="table-wrap">
+          <table id="previewTable" class="data-table"></table>
+        </div>
+      </div>
+
+      <!-- グラフタブ -->
+      <div id="tab-charts" class="tab-content" hidden>
+        <div class="chart-grid">
+          <div class="chart-card">
+            <div class="chart-title">記録件数の推移（日別）</div>
+            <canvas id="chartDaily"></canvas>
+          </div>
+          <div class="chart-card">
+            <div class="chart-title">利用者別 記録件数</div>
+            <canvas id="chartUsers"></canvas>
+          </div>
+        </div>
+        <div class="chart-card full">
+          <div class="chart-title">
+            数値データの推移
+            <select id="numericColSelect" class="select-sm"></select>
+          </div>
+          <canvas id="chartNumeric"></canvas>
+        </div>
+      </div>
+
+      <!-- Talknoteタブ -->
+      <div id="tab-talknote" class="tab-content" hidden>
+        <div id="talknoteEmpty" class="talknote-empty">
+          <div class="welcome-icon">💬</div>
+          <p>サイドバーのテキストエリアにTalknoteの内容を貼り付けて「読み込む」を押してください</p>
+        </div>
+        <div id="talknoteLoaded" hidden>
+          <div class="metrics" id="talknoteMetricsRow"></div>
+          <div class="section-title">Talknote 投稿プレビュー（先頭20件）</div>
+          <div class="table-wrap">
+            <table id="talknoteTable" class="data-table"></table>
+          </div>
+        </div>
+      </div>
+
+      <!-- AI分析タブ -->
+      <div id="tab-analysis" class="tab-content" hidden>
+        <div class="analysis-controls">
+          <div class="control-group">
+            <label>分析タイプ</label>
+            <select id="analysisType" class="select-md">
+              <option value="total">総合分析</option>
+              <option value="sleep">睡眠・生活リズム分析</option>
+              <option value="health">健康・バイタル分析</option>
+              <option value="behavior">行動・活動分析</option>
+              <option value="care_plan">個別支援計画への提言</option>
+            </select>
+          </div>
+          <div class="control-group">
+            <label>対象利用者</label>
+            <select id="userSelect" class="select-md">
+              <option value="__all__">全員</option>
+            </select>
+          </div>
+          <button id="runAnalysisBtn" class="btn-primary">AI分析を実行</button>
+        </div>
+
+        <div id="analysisLoading" class="loading" hidden>
+          <div class="spinner"></div>
+          <span>AIが分析中です...</span>
+        </div>
+
+        <div id="analysisResult" class="analysis-result" hidden>
+          <div class="result-header">
+            <span id="resultLabel" class="result-label"></span>
+            <button id="downloadBtn" class="btn-secondary">テキスト保存</button>
+          </div>
+          <div id="resultText" class="result-text"></div>
+        </div>
+      </div>
+
+      <!-- まもるーのタブ -->
+      <div id="tab-mamoruno" class="tab-content" hidden>
+
+        <!-- 未ロード時 -->
+        <div id="mamorunoEmpty" class="talknote-empty">
+          <div class="welcome-icon">💤</div>
+          <p>サイドバーからまもるーの CSVをアップロードしてください</p>
+          <div class="hint" style="margin-top:8px;">
+            まもるーのの管理画面からCSVエクスポートしたファイルを読み込めます
+          </div>
+        </div>
+
+        <!-- ロード後 -->
+        <div id="mamorunoLoaded" hidden>
+
+          <!-- 利用者フィルター -->
+          <div class="analysis-controls" style="margin-bottom:16px;">
+            <div class="control-group">
+              <label>表示利用者</label>
+              <select id="mamorunoUserSelect" class="select-md">
+                <option value="__all__">全員</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- メトリクス -->
+          <div class="metrics" id="mamorunoMetricsRow"></div>
+
+          <!-- 並列グラフ：まもるーの ＋ シンプルケース -->
+          <div class="chart-grid" style="margin-top:16px;">
+            <div class="chart-card">
+              <div class="chart-title">💤 まもるーの｜睡眠時間の推移</div>
+              <canvas id="chartMamorunoSleep"></canvas>
+            </div>
+            <div class="chart-card">
+              <div class="chart-title">📋 シンプルケース｜睡眠時間の推移</div>
+              <canvas id="chartSimpleSleep"></canvas>
+            </div>
+          </div>
+
+          <!-- 統合比較グラフ -->
+          <div class="chart-card full" style="margin-top:16px;">
+            <div class="chart-title">📊 統合比較｜睡眠時間（センサー vs ケア記録）</div>
+            <canvas id="chartCombinedSleep"></canvas>
+          </div>
+
+          <!-- 体動・離床グラフ -->
+          <div class="chart-grid" style="margin-top:16px;">
+            <div class="chart-card">
+              <div class="chart-title">💤 体動回数の推移</div>
+              <canvas id="chartBodyMove"></canvas>
+            </div>
+            <div class="chart-card">
+              <div class="chart-title">🚶 離床回数の推移</div>
+              <canvas id="chartOutOfBed"></canvas>
+            </div>
+          </div>
+
+          <!-- データプレビュー -->
+          <div class="section-title" style="margin-top:20px;">まもるーの データプレビュー（先頭15件）</div>
+          <div class="table-wrap">
+            <table id="mamorunoTable" class="data-table"></table>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- 統合分析タブ -->
+      <div id="tab-integrated" class="tab-content" hidden>
+
+        <!-- データ未ロード時 -->
+        <div id="intEmpty" class="talknote-empty">
+          <div class="welcome-icon">🔗</div>
+          <p>シンプルケース または まもるーの CSVをアップロードしてください</p>
+        </div>
+
+        <!-- ロード後 -->
+        <div id="intLoaded" hidden>
+
+          <!-- コントロール -->
+          <div class="analysis-controls" style="margin-bottom:16px;">
+            <div class="control-group">
+              <label>表示利用者</label>
+              <select id="intUserSelect" class="select-md"></select>
+            </div>
+          </div>
+
+          <!-- いつもと違う検知 -->
+          <div class="section-title" style="margin-bottom:10px;">
+            アラート検知 ― いつもと違う？
+          </div>
+          <div id="intAlerts" class="alert-grid"></div>
+
+          <!-- 睡眠タイムライン -->
+          <div class="chart-card full" style="margin-top:20px;">
+            <div class="chart-title">睡眠タイムライン（就寝〜起床）</div>
+            <div id="intTimelineWrap">
+              <canvas id="chartSleepTimeline"></canvas>
+            </div>
+          </div>
+
+          <!-- イベント一覧 -->
+          <div class="section-title" style="margin:20px 0 10px;">日別イベント一覧</div>
+          <div class="table-wrap">
+            <table id="intEventTable" class="data-table"></table>
+          </div>
+
+        </div>
+      </div>
+
+    </div>
+  </main>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
