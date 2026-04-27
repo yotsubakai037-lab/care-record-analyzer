@@ -15,7 +15,7 @@ document.addEventListener('DOMContentLoaded', () => {
   setupTalknoteUpload();
   setupMamorunoUpload();
   setupAnalysis();
-  setupSampleLoader();
+  setupRiskTab();
 });
 
 // ===== タブ =====
@@ -35,6 +35,7 @@ function setupTabs() {
       if (btn.dataset.tab === 'charts' && allRows.length) renderCharts();
       if (btn.dataset.tab === 'mamoruno' && mamorunoRows.length) renderMamorunoTab();
       if (btn.dataset.tab === 'integrated') renderIntegratedTab();
+      if (btn.dataset.tab === 'risk') showRiskTab();
     });
   });
 }
@@ -297,43 +298,8 @@ function renderNumericChart(col) {
   });
 }
 
-// ===== サンプルデータ読み込み =====
-function setupSampleLoader() {
-  const btn = document.getElementById('loadSampleBtn');
-  if (!btn) return;
-  btn.addEventListener('click', async () => {
-    btn.disabled = true;
-    btn.textContent = '読み込み中...';
-    try {
-      const res  = await fetch('/api/load-sample');
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
 
-      allRows   = data.scRows;
-      summary   = data.scSummary;
-      mamorunoRows    = data.mmRows;
-      mamorunoSummary = data.mmSummary;
-
-      document.getElementById('uploadText').textContent        = 'sample_simple_case.csv';
-      document.getElementById('fileStatus').textContent        = `✓ ${summary.totalRecords} 件`;
-      document.getElementById('mamorunoUploadText').textContent = 'sample_mamoruno.csv';
-      document.getElementById('mamorunoFileStatus').textContent = `✓ ${mamorunoSummary.totalRecords} 件`;
-
-      showDataScreen();
-
-      // 統合分析タブを自動表示
-      const intTab = document.querySelector('.tab[data-tab="integrated"]');
-      if (intTab) intTab.click();
-
-    } catch (e) {
-      showToast('サンプル読み込みエラー: ' + e.message);
-      btn.disabled = false;
-      btn.textContent = 'サンプルデータで試す';
-    }
-  });
-}
-
-// ===== まもるーの アップロード =====
+// ===== まもるーの PDFアップロード =====
 function setupMamorunoUpload() {
   const input  = document.getElementById('mamorunoFileInput');
   const status = document.getElementById('mamorunoFileStatus');
@@ -359,7 +325,6 @@ function setupMamorunoUpload() {
       document.getElementById('mamorunoUploadText').textContent = file.name;
       status.textContent = `✓ ${mamorunoSummary.totalRecords} 件読み込み完了`;
 
-      // データ画面が非表示なら表示する
       if (document.getElementById('dataScreen').hidden) {
         document.getElementById('welcomeScreen').hidden = true;
         document.getElementById('dataScreen').hidden = false;
@@ -367,13 +332,12 @@ function setupMamorunoUpload() {
         populateUserSelect();
       }
 
-      // まもるーのタブが表示中なら即時描画
       const tab = document.querySelector('.tab[data-tab="mamoruno"]');
       if (tab && tab.classList.contains('active')) renderMamorunoTab();
 
     } catch (e) {
       showToast(e.message);
-      document.getElementById('mamorunoUploadText').textContent = 'CSV をアップロード';
+      document.getElementById('mamorunoUploadText').textContent = 'PDF をアップロード';
     }
 
     input.value = '';
@@ -1030,6 +994,216 @@ function downloadResult() {
   a.href = URL.createObjectURL(blob);
   a.download = `AI分析_${label.replace(/\s*[／/]\s*/g, '_')}.txt`;
   a.click();
+}
+
+// ===== リスク一覧タブ =====
+
+let riskResults = [];
+let riskFilter  = 'all';
+
+function setupRiskTab() {
+  document.getElementById('riskScanBtn').addEventListener('click', runRiskScan);
+  document.getElementById('riskAnalysisCloseBtn').addEventListener('click', () => {
+    document.getElementById('riskAnalysisPanel').hidden = true;
+  });
+  document.getElementById('riskAnalysisDownloadBtn').addEventListener('click', () => {
+    const text  = document.getElementById('riskAnalysisText').innerText;
+    const label = document.getElementById('riskAnalysisLabel').textContent;
+    const blob  = new Blob([text], { type: 'text/plain;charset=utf-8' });
+    const a     = document.createElement('a');
+    a.href      = URL.createObjectURL(blob);
+    a.download  = `リスク分析_${label.replace(/\s*[／/]\s*/g, '_')}.txt`;
+    a.click();
+  });
+
+  document.getElementById('riskFilterGroup').addEventListener('click', e => {
+    const btn = e.target.closest('.risk-filter-btn');
+    if (!btn) return;
+    document.querySelectorAll('.risk-filter-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    riskFilter = btn.dataset.filter;
+    renderRiskTable();
+  });
+}
+
+function showRiskTab() {
+  const hasData = allRows.length || mamorunoRows.length;
+  document.getElementById('riskEmpty').hidden  = !!hasData;
+  document.getElementById('riskLoaded').hidden = !hasData;
+}
+
+function runRiskScan() {
+  const btn = document.getElementById('riskScanBtn');
+  const status = document.getElementById('riskScanStatus');
+  btn.disabled = true;
+  status.textContent = 'スキャン中...';
+
+  // 非同期にして UI を更新させる
+  setTimeout(() => {
+    try {
+      riskResults = window.RiskScanner.scanAll(allRows, mamorunoRows);
+      renderRiskSummary();
+      renderRiskTable();
+
+      document.getElementById('riskSummaryRow').style.display   = 'flex';
+      document.getElementById('riskTableWrap').style.display    = 'block';
+      document.getElementById('riskAnalysisPanel').hidden       = true;
+
+      const high = riskResults.filter(r => r.totalRisk >= 60).length;
+      const mid  = riskResults.filter(r => r.totalRisk >= 30 && r.totalRisk < 60).length;
+      status.textContent = `スキャン完了: 高リスク ${high}名 / 要注意 ${mid}名`;
+    } catch (e) {
+      showToast('スキャンエラー: ' + e.message);
+      status.textContent = '';
+    } finally {
+      btn.disabled = false;
+    }
+  }, 20);
+}
+
+function renderRiskSummary() {
+  const total = riskResults.length;
+  const high  = riskResults.filter(r => r.totalRisk >= 60).length;
+  const mid   = riskResults.filter(r => r.totalRisk >= 30 && r.totalRisk < 60).length;
+  const low   = total - high - mid;
+
+  const mr = document.getElementById('riskSummaryRow');
+  mr.innerHTML = '';
+  [
+    { label: '対象利用者', value: total + ' 名' },
+    { label: '高リスク',   value: high  + ' 名', cls: 'metric-card-danger'  },
+    { label: '要注意',     value: mid   + ' 名', cls: 'metric-card-caution' },
+    { label: '低リスク',   value: low   + ' 名', cls: 'metric-card-safe'    },
+  ].forEach(m => {
+    const card = document.createElement('div');
+    card.className = 'metric-card' + (m.cls ? ' ' + m.cls : '');
+    card.innerHTML = `<div class="metric-label">${m.label}</div><div class="metric-value">${m.value}</div>`;
+    mr.appendChild(card);
+  });
+}
+
+function riskLevel(score) {
+  if (score >= 60) return 'high';
+  if (score >= 30) return 'mid';
+  return 'low';
+}
+
+function riskBar(score) {
+  const level = riskLevel(score);
+  const color = level === 'high' ? '#e53e3e' : level === 'mid' ? '#d69e2e' : '#38a169';
+  const label = level === 'high' ? '高' : level === 'mid' ? '中' : '低';
+  return `<div class="risk-bar-wrap">
+    <div class="risk-bar-bg">
+      <div class="risk-bar-fill" style="width:${score}%;background:${color};"></div>
+    </div>
+    <span class="risk-score-num" style="color:${color};">${score}<span class="risk-score-label">${label}</span></span>
+  </div>`;
+}
+
+function renderRiskTable() {
+  const tbody = document.getElementById('riskTableBody');
+  tbody.innerHTML = '';
+
+  const filtered = riskResults.filter(r => {
+    if (riskFilter === 'high') return r.totalRisk >= 60;
+    if (riskFilter === 'mid')  return r.totalRisk >= 30 && r.totalRisk < 60;
+    if (riskFilter === 'low')  return r.totalRisk < 30;
+    return true;
+  });
+
+  if (!filtered.length) {
+    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:#718096;padding:24px;">該当なし</td></tr>`;
+    return;
+  }
+
+  filtered.forEach((r, idx) => {
+    const level = riskLevel(r.totalRisk);
+    const levelCls = level === 'high' ? 'risk-row-high' : level === 'mid' ? 'risk-row-mid' : '';
+    const hReasons = r.hospitalReasons.length ? r.hospitalReasons.join('・') : '―';
+    const cReasons = r.changeReasons.length   ? r.changeReasons.join('・')   : '―';
+
+    const tr = document.createElement('tr');
+    tr.className = levelCls;
+    tr.dataset.user = r.user;
+    tr.innerHTML = `
+      <td class="risk-rank-col">${idx + 1}</td>
+      <td><strong>${r.user}</strong></td>
+      <td class="risk-score-col">${riskBar(r.hospitalRisk)}</td>
+      <td class="risk-score-col">${riskBar(r.changeRisk)}</td>
+      <td class="risk-reason-cell" title="${hReasons}">${hReasons}</td>
+      <td class="risk-reason-cell" title="${cReasons}">${cReasons}</td>
+      <td class="risk-action-col">
+        <button class="btn-ai-risk" data-user="${r.user}">AI分析</button>
+      </td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+  // AI分析ボタン
+  tbody.querySelectorAll('.btn-ai-risk').forEach(btn => {
+    btn.addEventListener('click', () => runRiskAnalysis(btn.dataset.user));
+  });
+}
+
+async function runRiskAnalysis(userName) {
+  const apiKey = document.getElementById('apiKey').value.trim();
+  if (!apiKey) {
+    showToast('サイドバーにAPIキーを入力してください（Anthropic: sk-ant-... または GitHub: ghp_...）');
+    return;
+  }
+
+  const panel   = document.getElementById('riskAnalysisPanel');
+  const loading = document.getElementById('riskAnalysisLoading');
+  const textDiv = document.getElementById('riskAnalysisText');
+  const label   = document.getElementById('riskAnalysisLabel');
+
+  panel.hidden      = false;
+  loading.hidden    = false;
+  textDiv.innerHTML = '';
+  label.textContent = `リスク詳細分析 ／ ${userName}`;
+
+  // スクロール
+  panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+  try {
+    const targetRows = allRows.filter(r => {
+      const u = r.user_name || r['利用者名'] || r['利用者'] || r['氏名'] || '';
+      return u === userName;
+    });
+
+    const res = await fetch('/api/analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        rows: targetRows,
+        talknoteRows: [],
+        analysisType: 'total',
+        userName,
+        apiKey,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+
+    const riskInfo = riskResults.find(r => r.user === userName);
+    const prefix = riskInfo
+      ? `【リスクスコア】入院リスク: ${riskInfo.hospitalRisk}点 ／ 急変リスク: ${riskInfo.changeRisk}点\n` +
+        (riskInfo.hospitalReasons.length ? `【入院リスク根拠】${riskInfo.hospitalReasons.join('・')}\n` : '') +
+        (riskInfo.changeReasons.length   ? `【急変リスク根拠】${riskInfo.changeReasons.join('・')}\n`   : '') +
+        '\n'
+      : '';
+
+    const html = (prefix + data.result)
+      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+      .replace(/\n/g, '<br>');
+    textDiv.innerHTML = html;
+
+  } catch (e) {
+    showToast(e.message);
+    textDiv.innerHTML = `<span style="color:#e53e3e;">${e.message}</span>`;
+  } finally {
+    loading.hidden = true;
+  }
 }
 
 // ===== ユーティリティ =====

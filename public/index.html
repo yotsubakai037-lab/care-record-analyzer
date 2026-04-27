@@ -49,8 +49,8 @@
     <section class="panel">
       <div class="panel-title">まもるーの 睡眠データ</div>
       <label class="upload-btn" id="mamorunoUploadLabel">
-        <input type="file" id="mamorunoFileInput" accept=".csv" hidden>
-        <span id="mamorunoUploadText">CSV をアップロード</span>
+        <input type="file" id="mamorunoFileInput" accept=".pdf" hidden>
+        <span id="mamorunoUploadText">PDF をアップロード</span>
       </label>
       <div id="mamorunoFileStatus" class="file-status"></div>
     </section>
@@ -66,8 +66,6 @@
       <div class="welcome-icon">📊</div>
       <h1>ケア記録 AI分析アプリ</h1>
       <p>左のサイドバーから操作してください</p>
-      <button id="loadSampleBtn" class="btn-sample">サンプルデータで試す</button>
-
       <div class="steps">
         <div class="step"><span class="step-num">1</span>APIキーを入力</div>
         <div class="step-arrow">→</div>
@@ -86,7 +84,7 @@
         </div>
         <div class="feature">
           <div class="feature-icon">💤</div>
-          <div>まもるーの連携<br>（準備中）</div>
+          <div>まもるーの連携<br>（PDF貼り付け対応）</div>
         </div>
       </div>
     </div>
@@ -99,6 +97,7 @@
         <button class="tab active" data-tab="overview">データ概要</button>
         <button class="tab" data-tab="charts">グラフ</button>
         <button class="tab" data-tab="talknote">Talknote</button>
+        <button class="tab" data-tab="risk">リスク一覧</button>
         <button class="tab" data-tab="analysis">AI分析</button>
         <button class="tab" data-tab="mamoruno">まもるーの連携</button>
         <button class="tab" data-tab="integrated">統合分析</button>
@@ -146,6 +145,72 @@
           <div class="table-wrap">
             <table id="talknoteTable" class="data-table"></table>
           </div>
+        </div>
+      </div>
+
+      <!-- リスク一覧タブ -->
+      <div id="tab-risk" class="tab-content" hidden>
+
+        <!-- データ未ロード時 -->
+        <div id="riskEmpty" class="talknote-empty">
+          <div class="welcome-icon">🔍</div>
+          <p>シンプルケース または まもるーの CSVをアップロードしてください</p>
+        </div>
+
+        <!-- ロード後 -->
+        <div id="riskLoaded" hidden>
+
+          <!-- コントロールバー -->
+          <div class="risk-controls">
+            <div class="risk-controls-left">
+              <button id="riskScanBtn" class="btn-primary">全員スキャン</button>
+              <span id="riskScanStatus" class="risk-scan-status"></span>
+            </div>
+            <div class="risk-filter-group" id="riskFilterGroup">
+              <button class="risk-filter-btn active" data-filter="all">全員</button>
+              <button class="risk-filter-btn" data-filter="high">高リスク</button>
+              <button class="risk-filter-btn" data-filter="mid">要注意</button>
+              <button class="risk-filter-btn" data-filter="low">低リスク</button>
+            </div>
+          </div>
+
+          <!-- サマリーカード -->
+          <div class="metrics" id="riskSummaryRow" style="display:none;"></div>
+
+          <!-- リスク一覧テーブル -->
+          <div id="riskTableWrap" class="table-wrap" style="display:none;">
+            <table id="riskTable" class="data-table risk-table">
+              <thead>
+                <tr>
+                  <th class="risk-rank-col">#</th>
+                  <th>利用者名</th>
+                  <th class="risk-score-col">入院リスク<br><span class="th-sub">常時</span></th>
+                  <th class="risk-score-col">急変リスク<br><span class="th-sub">1〜2週間</span></th>
+                  <th>入院リスク根拠</th>
+                  <th>急変リスク根拠</th>
+                  <th class="risk-action-col">AI詳細分析</th>
+                </tr>
+              </thead>
+              <tbody id="riskTableBody"></tbody>
+            </table>
+          </div>
+
+          <!-- AI分析結果（インライン表示） -->
+          <div id="riskAnalysisPanel" class="risk-analysis-panel" hidden>
+            <div class="risk-analysis-header">
+              <span id="riskAnalysisLabel" class="result-label"></span>
+              <div style="display:flex;gap:8px;align-items:center;">
+                <button id="riskAnalysisDownloadBtn" class="btn-secondary">テキスト保存</button>
+                <button id="riskAnalysisCloseBtn" class="btn-secondary">閉じる</button>
+              </div>
+            </div>
+            <div id="riskAnalysisLoading" class="loading" hidden>
+              <div class="spinner"></div>
+              <span>AIが分析中です...</span>
+            </div>
+            <div id="riskAnalysisText" class="result-text"></div>
+          </div>
+
         </div>
       </div>
 
@@ -299,6 +364,7 @@
   </main>
 </div>
 
+<script src="riskScanner.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

@@ -6,8 +6,9 @@ const multer  = require('multer');
 const path    = require('path');
 const { parseFile, getSummary, prepareForAnalysis } = require('./src/simpleCase');
 const { parseTalknote, parseTalknoteText, getTalknoteSummary, prepareForAnalysis: prepareTalknote } = require('./src/talknote');
-const { parseMamoruno, getMamorunoSummary } = require('./src/mamoruno');
+const { parseMamorunoPdfText, getMamorunoSummary } = require('./src/mamoruno');
 const { analyze } = require('./src/aiAnalyzer');
+const pdfParse = require('pdf-parse');
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
@@ -52,11 +53,12 @@ app.post('/api/paste-talknote', (req, res) => {
   }
 });
 
-// ---- まもるーの アップロード & パース ----
-app.post('/api/upload-mamoruno', upload.single('file'), (req, res) => {
+// ---- まもるーの PDFアップロード ----
+app.post('/api/upload-mamoruno', upload.single('file'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'ファイルが選択されていません' });
-    const rows    = parseMamoruno(req.file.buffer);
+    const data = await pdfParse(req.file.buffer);
+    const rows    = parseMamorunoPdfText(data.text);
     const summary = getMamorunoSummary(rows);
     res.json({ rows, summary });
   } catch (e) {
@@ -64,25 +66,6 @@ app.post('/api/upload-mamoruno', upload.single('file'), (req, res) => {
   }
 });
 
-// ---- サンプルデータ一括読み込み ----
-app.get('/api/load-sample', async (req, res) => {
-  try {
-    const fs = require('fs');
-    const sampleDir = path.join(__dirname, 'sample_data');
-
-    const scBuf = fs.readFileSync(path.join(sampleDir, 'sample_simple_case.csv'));
-    const scRows = await parseFile(scBuf, 'sample_simple_case.csv');
-    const scSummary = getSummary(scRows);
-
-    const mmBuf = fs.readFileSync(path.join(sampleDir, 'sample_mamoruno.csv'));
-    const mmRows = parseMamoruno(mmBuf);
-    const mmSummary = getMamorunoSummary(mmRows);
-
-    res.json({ scRows, scSummary, mmRows, mmSummary });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
 
 // ---- AI分析 ----
 app.post('/api/analyze', async (req, res) => {
